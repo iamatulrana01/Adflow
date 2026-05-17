@@ -1,0 +1,135 @@
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      MONGODB_URI: mongodb://mongodb:27017/adflow
+      JWT_SECRET: ${JWT_SECRET:-adflow-dev-secret}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@adflow.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  campaign-api:
+    build: ./services/campaign-api
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      MONGODB_URI: mongodb://mongodb:27017/adflow
+      AI_CLASSIFIER_URL: http://ai-classifier:8000
+      MONITORING_URL: http://monitoring-service:3002
+      NOTIFICATION_URL: http://notification-service:3005
+      AUTH_SERVICE_URL: http://auth-service:3004
+      INGESTION_WORKER_URL: http://ingestion-worker:3003
+      BULK_CONCURRENCY: 10
+      REQUIRE_AUTH: ${REQUIRE_AUTH:-false}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ai-classifier:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-classifier:
+    build: ./services/ai-classifier
+    ports:
+      - "8000:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      USE_MOCK_LLM: ${USE_MOCK_LLM:-true}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  monitoring-service:
+    build: ./services/monitoring-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      CAMPAIGN_API_URL: http://campaign-api:3001
+      AI_CLASSIFIER_URL: http://ai-classifier:8000
+      AUTH_SERVICE_URL: http://auth-service:3004
+      NOTIFICATION_URL: http://notification-service:3005
+      ANALYTICS_URL: http://analytics-service:3006
+      INGESTION_URL: http://ingestion-worker:3003
+    depends_on:
+      - campaign-api
+      - notification-service
+
+  notification-service:
+    build: ./services/notification-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+
+  analytics-service:
+    build: ./services/analytics-service
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      MONGODB_URI: mongodb://mongodb:27017/adflow
+      CAMPAIGN_API_URL: http://campaign-api:3001
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  ingestion-worker:
+    build: ./services/ingestion-worker
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      CAMPAIGN_API_URL: http://campaign-api:3001
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-adflow-campaigns-local}
+      USE_LOCAL_STORAGE: "true"
+    depends_on:
+      - campaign-api
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3001
+        VITE_WS_URL: ws://localhost:3002
+        VITE_AUTH_URL: http://localhost:3004
+        VITE_ANALYTICS_URL: http://localhost:3006
+    ports:
+      - "5173:80"
+    depends_on:
+      - campaign-api
+      - monitoring-service
+      - analytics-service
+
+volumes:
+  mongo_data:

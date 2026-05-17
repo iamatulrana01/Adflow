@@ -1,0 +1,14 @@
+{
+  "name": "adflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Powered Campaign Automation & Monitoring Platform",
+  "scripts": {
+    "install:all": "npm install --prefix services/campaign-api && npm install --prefix services/monitoring-service && npm install --prefix services/ingestion-worker && npm install --prefix frontend",
+    "test": "npm test --prefix services/campaign-api && npm test --prefix services/monitoring-service && npm test --prefix services/auth-service && npm test --prefix services/notification-service",
+    "dev:api": "npm run dev --prefix services/campaign-api",
+    "dev:monitor": "npm start --prefix services/monitoring-service",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend"
+  }
+}

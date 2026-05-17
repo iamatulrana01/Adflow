@@ -1,0 +1,78 @@
+name: AdFlow CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [campaign-api, monitoring-service, ingestion-worker, auth-service, notification-service]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install & test ${{ matrix.service }}
+        working-directory: services/${{ matrix.service }}
+        run: |
+          npm install
+          npm test
+
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install & test ai-classifier
+        working-directory: services/ai-classifier
+        run: |
+          pip install -r requirements.txt
+          pytest --cov=app --cov-report=term-missing -q
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [test-node, test-python, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all images
+        run: docker compose build
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zero-downtime deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          if [ -z "$EC2_HOST" ]; then
+            echo "EC2_HOST not configured — skipping deploy"
+            exit 0
+          fi
+          echo "$SSH_KEY" > deploy_key.pem
+          chmod 600 deploy_key.pem
+          export SSH_KEY_PATH=deploy_key.pem
+          bash deploy/aws/deploy.sh

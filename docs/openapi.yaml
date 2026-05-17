@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info:
+  title: AdFlow API
+  version: 1.0.0
+  description: AI-Powered Campaign Automation Platform
+
+servers:
+  - url: http://localhost:3001
+    description: Campaign API
+  - url: http://localhost:8000
+    description: AI Classifier
+  - url: http://localhost:3004
+    description: Auth Service
+
+paths:
+  /api/campaigns:
+    get:
+      summary: List campaigns
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: failed
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Campaign list
+    post:
+      summary: Create campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignInput'
+      responses:
+        '201':
+          description: Created
+
+  /api/campaigns/ingest/bulk:
+    post:
+      summary: Bulk ingest campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                campaigns:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CampaignInput'
+      responses:
+        '202':
+          description: Accepted
+
+  /api/campaigns/{id}/process:
+    post:
+      summary: AI classify and activate campaign
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Processed campaign
+
+  /classify:
+    post:
+      servers:
+        - url: http://localhost:8000
+      summary: AI classification
+      responses:
+        '200':
+          description: Classification result
+
+  /api/auth/login:
+    post:
+      servers:
+        - url: http://localhost:3004
+      summary: Login
+      responses:
+        '200':
+          description: JWT token
+
+components:
+  schemas:
+    CampaignInput:
+      type: object
+      required: [name, budget]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        budget: { type: number }
+        channel: { type: string, enum: [search, social, display, email, video, other] }
+    ClassificationResult:
+      type: object
+      properties:
+        category: { type: string }
+        priority: { type: string }
+        route: { type: string }
+        objective: { type: string }
+        target_platform: { type: string }
+        approval_flow: { type: string }
+        workflow_steps: { type: array, items: { type: string } }
+        confidence: { type: number }
